@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radar Guard - Vibrační Alarm</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            transition: background-color 0.3s;
+            background-color: #2c3e50;
+            color: white;
+        }
+
+        #status-box {
+            font-size: 3rem;
+            font-weight: bold;
+            padding: 30px;
+            border-radius: 20px;
+            border: 5px solid white;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        button {
+            padding: 20px 40px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            border-radius: 50px;
+            border: none;
+            background: #3498db;
+            color: white;
+        }
+
+        .state-KLID { background-color: #27ae60; }
+        .state-POZOR { background-color: #f1c40f; color: black; }
+        .state-NEBEZPECI { background-color: #e74c3c; }
+    </style>
+</head>
+<body id="bg">
+
+    <div id="status-box">ODPOJENO</div>
+    <button id="btn" onclick="connectBLE()">PŘIPOJIT A AKTIVOVAT VIBRACE</button>
+
+    <script>
+        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+        
+        let currentStatus = "KLID";
+        let vibrationInterval = null;
+
+        async function connectBLE() {
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'XIAO_Radar_Guard' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+                document.getElementById('btn').style.display = "none";
+                document.getElementById('status-box').innerText = "PŘIPOJENO";
+                
+                characteristic.startNotifications();
+                characteristic.addEventListener('characteristicvaluechanged', handleNotifications);
+                
+                // Spustíme smyčku pro vibrace každých 100ms
+                startVibrationLoop();
+
+            } catch (error) {
+                alert("Chyba: Bluetooth není dostupný nebo byl zrušen.");
+            }
+        }
+
+        function handleNotifications(event) {
+            let value = new TextDecoder().decode(event.target.value);
+            currentStatus = value; // Aktualizujeme globální stav
+
+            document.getElementById('status-box').innerText = value;
+            document.getElementById('bg').className = 'state-' + value;
+        }
+
+        // --- HLAVNÍ VIBRAČNÍ SMYČKA ---
+        function startVibrationLoop() {
+            let tick = 0;
+
+            setInterval(() => {
+                if (!navigator.vibrate) return;
+
+                if (currentStatus === "NEBEZPECI") {
+                    // NEBEZPEČÍ: Vibruj pořád (krátké pulzy s minimální pauzou pro agresivní efekt)
+                    navigator.vibrate(400); 
+                } 
+                else if (currentStatus === "POZOR") {
+                    // POZOR: Vibruj 1x za 3 vteřiny (smyčka běží po 500ms, takže každých 6 tiků)
+                    tick++;
+                    if (tick >= 6) { 
+                        navigator.vibrate(200);
+                        tick = 0;
+                    }
+                } 
+                else {
+                    // KLID: Nedělej nic, vynuluj počítadlo
+                    tick = 0;
+                }
+            }, 500); // Kontrola stavu každých 0.5 sekundy
+        }
+    </script>
+</body>
+</html>
